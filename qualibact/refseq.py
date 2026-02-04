@@ -1,26 +1,64 @@
-import os 
+import os
 import json
 import subprocess
 import logging
-import time 
+import time
 
-def run_datasets_summary(taxon, outdir, assembly_source="RefSeq", assembly_level="complete", reference=False):
+
+def find_datsasets_bin():
     bin_dir = os.environ.get("QUALIBACT_BIN", "bin")
+    datasets_path = os.path.join(bin_dir, "datasets")
+    # Or it's on PATH
+    if os.path.exists("datasets") and os.access("datasets", os.X_OK):
+        return ["datasets"]
+    if os.path.exists(datasets_path) and os.access(datasets_path, os.X_OK):
+        return [datasets_path]
+    # Or its in pixi managed bin dir. Try running it as subprocess to see if it 
+    # works - pixi run -- datasets --version ❯ pixi run datasets --version datasets version: 18.9.0
+    try:
+        result = subprocess.run(
+            ["pixi", "run", "--", "datasets", "--version"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode == 0:
+            return ["pixi", "run", "--", "datasets"]
+    except FileNotFoundError:
+        pass
+    
+
+    raise FileNotFoundError(
+            f"'datasets' binary not found in {bin_dir}. Please ensure QUALIBACT_BIN is set correctly."
+        )
+
+
+def run_datasets_summary(
+    taxon, outdir, assembly_source="RefSeq", assembly_level="complete", reference=False
+):
     os.makedirs(outdir, exist_ok=True)
     output_json = os.path.join(outdir, f"{taxon}.json")
     if os.path.exists(output_json) and os.path.getsize(output_json) > 0:
         with open(output_json, "r", encoding="utf-8") as f:
             return json.load(f)
+
+    datasets_bin = find_datsasets_bin()
     command = [
-        f"{bin_dir}/datasets", "summary", "genome", "taxon", f'{taxon}',
-        "--assembly-source", assembly_source,
-        "--assembly-level", assembly_level
+        *datasets_bin,
+        "summary",
+        "genome",
+        "taxon",
+        f"{taxon}",
+        "--assembly-source",
+        assembly_source,
+        "--assembly-level",
+        assembly_level,
     ]
     if reference:
         command.append("--reference")
-    
+
     result = subprocess.run(command, capture_output=True, text=True)
-    
+
     try:
         with open(output_json, "w") as f:
             f.write(result.stdout)
@@ -33,23 +71,31 @@ def run_datasets_summary(taxon, outdir, assembly_source="RefSeq", assembly_level
 def extract_metrics(report):
     extracted_data = {}
 
-    # Need to calcukate GC_Content 
-    extracted_data['GC_Content'] = round(
-        float(report['assembly_stats']['gc_count']) / float(report['assembly_stats']['atgc_count']), 6
+    # Need to calcukate GC_Content
+    extracted_data["GC_Content"] = round(
+        float(report["assembly_stats"]["gc_count"])
+        / float(report["assembly_stats"]["atgc_count"]),
+        6,
     )
-    extracted_data['Genome_Size'] = int(report['assembly_stats']['total_sequence_length'])
-    extracted_data['total_length'] = int(report['assembly_stats']['total_sequence_length'])
-    
-    extracted_data["Total_Coding_Sequences"] = int(report['annotation_info']['stats']['gene_counts']['total'])
+    extracted_data["Genome_Size"] = int(
+        report["assembly_stats"]["total_sequence_length"]
+    )
+    extracted_data["total_length"] = int(
+        report["assembly_stats"]["total_sequence_length"]
+    )
+
+    extracted_data["Total_Coding_Sequences"] = int(
+        report["annotation_info"]["stats"]["gene_counts"]["total"]
+    )
     # Extract CheckM information
     checkm_info = report.get("checkm_info", {})
     extracted_data["Completeness_Specific"] = checkm_info.get("completeness", None)
     extracted_data["Contamination"] = checkm_info.get("contamination", None)
-    
+
     return extracted_data
 
-def get_metrics(taxon, outdir):
 
+def get_metrics(taxon, outdir):
     json_data = run_datasets_summary(taxon, outdir)
 
     metrics_dict = {
@@ -58,7 +104,7 @@ def get_metrics(taxon, outdir):
         "total_length": [],
         "Total_Coding_Sequences": [],
         "Completeness_Specific": [],
-        "Contamination": []
+        "Contamination": [],
     }
     while json_data is None:
         time.sleep(5)
@@ -72,4 +118,4 @@ def get_metrics(taxon, outdir):
         for key, value in extracted_metrics.items():
             if value is not None:
                 metrics_dict[key].append(value)
-    return metrics_dict 
+    return metrics_dict

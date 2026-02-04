@@ -1,6 +1,11 @@
 # qualibact-engine
 Assess genome assembly metrics and determined cutoffs. 
 
+Website: https://happykhan.github.io/qualibact/
+
+This is the criteria used in Speccheck: https://github.com/happykhan/speccheck
+
+The engine that calculates the thresholds in https://github.com/happykhan/qualibact-engine
 
 
 ## 📊 Features

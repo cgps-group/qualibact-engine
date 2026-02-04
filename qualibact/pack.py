@@ -50,9 +50,15 @@ SKIP_DIR_NAMES = {"all_summary", "GENUS_SUMMARY", "filtered_plots"}
 # ---------------------------------------------------------------------------
 # small helpers
 
+
 def configure_logging(verbose: bool) -> None:
     global LOG_VERBOSE
     LOG_VERBOSE = verbose
+
+
+def public_path(path: Path, output_public: Path) -> str:
+    """Return a web path (leading slash) relative to output_public."""
+    return "/" + path.relative_to(output_public).as_posix()
 
 
 def log(msg: str, verbose: bool = False, level: str = "info") -> None:
@@ -115,7 +121,10 @@ def normalize_species_name(name: str) -> str:
 # ---------------------------------------------------------------------------
 # discovery
 
-def discover_species(input_dir: Path, version_override: Optional[str]) -> Dict[str, List[Tuple[Path, str]]]:
+
+def discover_species(
+    input_dir: Path, version_override: Optional[str]
+) -> Dict[str, List[Tuple[Path, str]]]:
     """Return a mapping of species -> list of (species_dir, version_name)."""
     species_map: Dict[str, List[Tuple[Path, str]]] = {}
     added = set()
@@ -170,20 +179,27 @@ def select_species_dirs(
     selected: List[Tuple[str, Path, str]] = []
     for species, options in species_map.items():
         preferred_version = preferred.get(species)
+
         # sort with preferred first, then by version name for stability
         def sort_key(opt: Tuple[Path, str]) -> Tuple[bool, str]:
             directory, version = opt
-            return (0 if preferred_version and version == preferred_version else 1, version)
+            return (
+                0 if preferred_version and version == preferred_version else 1,
+                version,
+            )
 
         ordered = sorted(options, key=sort_key)
         for directory, version in ordered:
             selected.append((species, directory, version))
-        log(f"Queued {species} versions {[v for _, v in ordered]} ({len(ordered)} total)")
+        log(
+            f"Queued {species} versions {[v for _, v in ordered]} ({len(ordered)} total)"
+        )
     return selected
 
 
 # ---------------------------------------------------------------------------
 # data preparation
+
 
 def load_filtered_metrics(input_dir: Path) -> Optional[pd.DataFrame]:
     # Aggregated filtered_metrics.csv is no longer used; rely on per-species *_metrics.csv instead.
@@ -202,7 +218,8 @@ def load_species_thresholds(
     if metrics_df is not None:
         if "species" in metrics_df.columns:
             subset = metrics_df[
-                metrics_df["species"].apply(lambda s: normalize_species_name(str(s))) == species_norm
+                metrics_df["species"].apply(lambda s: normalize_species_name(str(s)))
+                == species_norm
             ]
         else:
             subset = metrics_df
@@ -215,7 +232,10 @@ def load_species_thresholds(
             metrics_df = pd.read_csv(metrics_path)
             if "species" in metrics_df.columns:
                 subset = metrics_df[
-                    metrics_df["species"].apply(lambda s: normalize_species_name(str(s))) == species_norm
+                    metrics_df["species"].apply(
+                        lambda s: normalize_species_name(str(s))
+                    )
+                    == species_norm
                 ]
             else:
                 metrics_df["species"] = species
@@ -235,13 +255,19 @@ def load_species_thresholds(
         )
         if "species" in rounded_df.columns:
             subset = rounded_df[
-                rounded_df["species"].apply(lambda s: normalize_species_name(str(s))) == species_norm
+                rounded_df["species"].apply(lambda s: normalize_species_name(str(s)))
+                == species_norm
             ]
             # if still empty, allow using the whole rounded_df with normalized species column
             if subset.empty:
-                rounded_df["species"] = rounded_df["species"].apply(lambda s: s.replace(" ", "_"))
+                rounded_df["species"] = rounded_df["species"].apply(
+                    lambda s: s.replace(" ", "_")
+                )
                 subset = rounded_df[
-                    rounded_df["species"].apply(lambda s: normalize_species_name(str(s))) == species_norm
+                    rounded_df["species"].apply(
+                        lambda s: normalize_species_name(str(s))
+                    )
+                    == species_norm
                 ]
         else:
             rounded_df["species"] = species
@@ -259,31 +285,45 @@ def apply_filters(
     df = read_parquet(assembly_stats)
     df = df.copy()
     df.rename(
-        columns={"number": "no_of_contigs", "Completeness_Specific": "Completeness"}, inplace=True
+        columns={"number": "no_of_contigs", "Completeness_Specific": "Completeness"},
+        inplace=True,
     )
     if "GC_Content" in df.columns and df["GC_Content"].max() <= 1:
         df["GC_Content"] = df["GC_Content"] * 100
 
+    # helper to normalize metric names for matching (strip, lower, replace spaces/underscores)
+    def norm(name: str) -> str:
+        return str(name).strip().lower().replace(" ", "_")
+
+    # map normalized column names to actual columns
+    df_norm_map = {norm(col): col for col in df.columns}
+
     reasons: List[List[str]] = [[] for _ in range(len(df))]
     index_positions = {idx: pos for pos, idx in enumerate(df.index)}
     for _, row in thresholds.iterrows():
-        metric = row["metric"]
-        if metric not in df.columns:
+        raw_metric = row.get("metric")
+        if not isinstance(raw_metric, str):
             continue
+        metric_key = norm(raw_metric)
+        column_name = df_norm_map.get(metric_key)
+        if column_name is None:
+            continue
+        # ensure numeric for this column
+        df[column_name] = pd.to_numeric(df[column_name], errors="coerce")
         lower = to_number(row.get("lower_bounds"))
         upper = to_number(row.get("upper_bounds"))
         if lower is not None:
-            mask = df[metric] < lower
+            mask = df[column_name] < lower
             for idx in df.index[mask]:
                 pos = index_positions.get(idx)
                 if pos is not None:
-                    reasons[pos].append(f"{metric} < {lower}")
+                    reasons[pos].append(f"{column_name} < {lower}")
         if upper is not None:
-            mask = df[metric] > upper
+            mask = df[column_name] > upper
             for idx in df.index[mask]:
                 pos = index_positions.get(idx)
                 if pos is not None:
-                    reasons[pos].append(f"{metric} > {upper}")
+                    reasons[pos].append(f"{column_name} > {upper}")
 
     rejection_reason = ["; ".join(r) for r in reasons]
     df["rejection_reason"] = rejection_reason
@@ -304,7 +344,9 @@ def write_xz_csv(df: pd.DataFrame, path: Path, dry_run: bool) -> None:
     df.to_csv(path, index=False, compression="xz")
 
 
-def _flatten_value(value, prefix: str, result: Dict[str, object], sep: str = ".") -> None:
+def _flatten_value(
+    value, prefix: str, result: Dict[str, object], sep: str = "."
+) -> None:
     """
     Recursively flatten dict/list values into key/value pairs.
 
@@ -321,7 +363,9 @@ def _flatten_value(value, prefix: str, result: Dict[str, object], sep: str = "."
             result[key_name] = ""
             return
         if all(not isinstance(item, (dict, list)) for item in value):
-            result[key_name] = "; ".join("" if item is None else str(item) for item in value)
+            result[key_name] = "; ".join(
+                "" if item is None else str(item) for item in value
+            )
             return
         for idx, item in enumerate(value):
             new_prefix = f"{prefix}{sep}{idx}" if prefix else str(idx)
@@ -330,7 +374,9 @@ def _flatten_value(value, prefix: str, result: Dict[str, object], sep: str = "."
         result[key_name] = value
 
 
-def flatten_records(records: List[Dict[str, object]], sep: str = ".") -> List[Dict[str, object]]:
+def flatten_records(
+    records: List[Dict[str, object]], sep: str = "."
+) -> List[Dict[str, object]]:
     """Turn a list of nested dict records into fully flattened dicts suitable for CSV export."""
     flattened: List[Dict[str, object]] = []
     for record in records:
@@ -341,11 +387,17 @@ def flatten_records(records: List[Dict[str, object]], sep: str = ".") -> List[Di
 
 
 def convert_refseq_json(
-    species_dir: Path, species: str, dest_dir: Path, dry_run: bool, verbose: bool
+    species_dir: Path,
+    species: str,
+    dest_dir: Path,
+    output_public: Path,
+    dry_run: bool,
+    verbose: bool,
 ) -> Tuple[Optional[str], Optional[int], Optional[str]]:
     """
     Flatten the RefSeq JSON into CSV.xz. Returns (public_path, count, last_updated_iso).
     """
+
     def safe_int(val: Optional[object]) -> Optional[int]:
         try:
             return int(val) if val is not None else None
@@ -398,7 +450,7 @@ def convert_refseq_json(
     out_path = dest_dir / f"{species}_refseq_genomes.csv.xz"
     write_xz_csv(refseq_df, out_path, dry_run)
     log(f"Wrote RefSeq table for {species} -> {out_path}", verbose)
-    return f"/{dest_dir.relative_to(dest_dir.parents[1])}/{out_path.name}", count, last_updated
+    return (public_path(out_path, output_public), count, last_updated)
 
 
 def copy_assets(source_dir: Path, dest_dir: Path, dry_run: bool, verbose: bool) -> None:
@@ -422,7 +474,9 @@ def copy_assets(source_dir: Path, dest_dir: Path, dry_run: bool, verbose: bool) 
                 if stem_norm == species_norm:
                     # Skip raw RefSeq JSON copies; CSV.xz is emitted separately
                     continue
-            if file.endswith(("_filtered_out_genomes.csv", "_high_quality_genomes.csv")):
+            if file.endswith(
+                ("_filtered_out_genomes.csv", "_high_quality_genomes.csv")
+            ):
                 continue
             if ext not in ALLOWED_EXTS and not file.endswith(".csv.xz"):
                 continue
@@ -440,6 +494,7 @@ def copy_assets(source_dir: Path, dest_dir: Path, dry_run: bool, verbose: bool) 
 # ---------------------------------------------------------------------------
 # outputs
 
+
 def write_manifest(
     species: str,
     version: str,
@@ -454,6 +509,7 @@ def write_manifest(
     selected_summary_exists: bool,
     verbose: bool,
     dry_run: bool,
+    output_public: Path,
 ) -> None:
     manifest = {
         "species": species,
@@ -463,8 +519,12 @@ def write_manifest(
         "modules": [],
         "genome_counts": genome_counts,
         "refseq_table_path": refseq_path,
-        "summary_csv_path": f"/{species}/{version}/summary.csv" if summary_exists else None,
-        "selected_summary_csv_path": f"/{species}/{version}/selected_summary.csv"
+        "summary_csv_path": public_path(dest_dir / "summary.csv", output_public)
+        if summary_exists
+        else None,
+        "selected_summary_csv_path": public_path(
+            dest_dir / "selected_summary.csv", output_public
+        )
         if selected_summary_exists
         else None,
         "filtered_genomes_path": filtered_path,
@@ -562,29 +622,44 @@ def write_site_index(
     mark_latest: Optional[str],
     dry_run: bool,
     overwrite: bool,
+    prefer_versions: Optional[Dict[str, str]] = None,
 ) -> None:
-    site_index = {"species": {}, "last_updated": datetime.now().isoformat()}
+    prefer_versions = prefer_versions or {}
+    out_path = output_public / "site_index.json"
+    existing: Dict[str, object] = {}
+    if out_path.exists():
+        try:
+            with open(out_path, "r", encoding="utf-8") as handle:
+                existing = json.load(handle) or {}
+        except Exception as exc:
+            log(f"Failed to read existing site_index.json: {exc}", level="warning")
+    site_index = {
+        "species": existing.get("species", {}),
+        "last_updated": datetime.now().isoformat(),
+    }
     for species, versions in species_versions.items():
-        versions_sorted = sorted(set(versions))
-        preferred = None
-        if mark_latest:
+        entry = site_index["species"].get(
+            species, {"qc_schemes": [], "preferred_qc_scheme": None}
+        )
+        merged_versions = sorted(set(entry.get("qc_schemes", []) + versions))
+        preferred = entry.get("preferred_qc_scheme")
+        if species in prefer_versions:
+            preferred = prefer_versions[species]
+        elif mark_latest:
             if mark_latest is True or str(mark_latest).lower() == "true":
-                preferred = versions_sorted[-1]
-            elif mark_latest in versions_sorted:
+                preferred = merged_versions[-1]
+            elif mark_latest in merged_versions:
                 preferred = mark_latest
-        if preferred is None and versions_sorted:
-            preferred = versions_sorted[-1]
+        if preferred is None and merged_versions:
+            preferred = merged_versions[-1]
         site_index["species"][species] = {
-            "qc_schemes": versions_sorted,
+            "qc_schemes": merged_versions,
             "preferred_qc_scheme": preferred,
         }
     if dry_run:
+        log(f"[dry-run] would write site_index.json with {len(site_index['species'])} species")
         return
-    out_path = output_public / "site_index.json"
     ensure_dir(out_path.parent, dry_run=False)
-    if out_path.exists() and not overwrite:
-        log("site_index.json already exists and overwrite is False; skipping write")
-        return
     with open(out_path, "w", encoding="utf-8") as handle:
         json.dump(site_index, handle, indent=2)
     log(f"Wrote site_index.json with {len(site_index['species'])} species")
@@ -601,7 +676,11 @@ def write_genus_summaries(
         log("No metrics or counts available; skipping genus summaries")
         return
     genus_groups: Dict[str, List[str]] = {}
-    for species in set(species_metrics.keys()) | set(species_counts.keys()) | set(species_summaries.keys()):
+    for species in (
+        set(species_metrics.keys())
+        | set(species_counts.keys())
+        | set(species_summaries.keys())
+    ):
         genus = species.split("_")[0]
         genus_groups.setdefault(genus, []).append(species)
 
@@ -611,7 +690,7 @@ def write_genus_summaries(
             df = species_metrics.get(species)
             if df is not None and not df.empty:
                 metrics_frames.append(df.copy())
-        genus_path = output_public / genus
+        genus_path = output_public / "static" / "genus" / genus
         ensure_dir(genus_path, dry_run)
         if metrics_frames:
             merged_metrics = pd.concat(metrics_frames, ignore_index=True)
@@ -651,7 +730,10 @@ def write_summary_downloads(
     output_public: Path,
     dry_run: bool,
 ) -> None:
-    """Emit merged CSVs for the summary page (preferred QC schemes only)."""
+    """Emit merged CSVs for the summary page (preferred QC schemes only).
+
+    This rebuilds from the packaged public directory so previously generated species remain included.
+    """
     summary_dir = output_public / "summary"
 
     def ensure_summary_dir() -> None:
@@ -669,56 +751,130 @@ def write_summary_downloads(
         df.to_csv(out_path, index=False)
         log(f"Wrote {filename} for summary page with {len(df)} rows")
 
+    # Discover preferred scheme per species from site_index.json
+    site_index = output_public / "site_index.json"
+    species_versions: Dict[str, str] = {}
+    if site_index.exists():
+        try:
+            with open(site_index, "r", encoding="utf-8") as handle:
+                data = json.load(handle) or {}
+                for species, entry in data.get("species", {}).items():
+                    preferred = entry.get("preferred_qc_scheme")
+                    if preferred:
+                        species_versions[species] = preferred
+        except Exception as exc:
+            log(f"Failed to read site_index.json: {exc}", level="warning")
+    if not species_versions:
+        # fallback: scan filesystem
+        species_root = output_public / "static" / "species"
+        for species_dir in species_root.iterdir() if species_root.exists() else []:
+            if not species_dir.is_dir():
+                continue
+            versions = sorted([p.name for p in species_dir.iterdir() if p.is_dir()])
+            if versions:
+                species_versions[species_dir.name] = versions[-1]
+
+    species_root = output_public / "static" / "species"
     metrics_frames: List[pd.DataFrame] = []
-    for species, df in latest_metrics.items():
-        if df is None or df.empty:
+    summary_frames: List[pd.DataFrame] = []
+    counts_rows: List[Dict[str, object]] = []
+
+    for species, version in species_versions.items():
+        species_dir = species_root / species / version
+        if not species_dir.exists():
             continue
-        frame = df.copy()
-        if "species" not in frame.columns:
-            frame["species"] = species
-        metrics_frames.append(frame)
+        metrics_path = species_dir / f"{species}_metrics.csv"
+        if metrics_path.exists():
+            try:
+                df = pd.read_csv(metrics_path)
+                if "species" not in df.columns:
+                    df["species"] = species
+                metrics_frames.append(df)
+            except Exception as exc:
+                log(f"Failed to read metrics for {species}: {exc}", level="warning")
+
+        summary_path = species_dir / "summary.csv"
+        if summary_path.exists():
+            try:
+                df = pd.read_csv(summary_path)
+                if "species" not in df.columns:
+                    df["species"] = species
+                summary_frames.append(df)
+            except Exception as exc:
+                log(f"Failed to read summary for {species}: {exc}", level="warning")
+
+        filtered_path = next(
+            species_dir.glob(f"{species}_filtered_out_genomes.csv.xz"), None
+        )
+        highq_path = next(
+            species_dir.glob(f"{species}_high_quality_genomes.csv.xz"), None
+        )
+        filtered_count = 0
+        highq_count = 0
+        try:
+            if filtered_path and filtered_path.exists():
+                filtered_count = len(pd.read_csv(filtered_path))
+            if highq_path and highq_path.exists():
+                highq_count = len(pd.read_csv(highq_path))
+        except Exception as exc:
+            log(f"Failed to read counts for {species}: {exc}", level="warning")
+        if filtered_count or highq_count:
+            counts_rows.append(
+                {
+                    "species": species,
+                    "original_count": filtered_count + highq_count,
+                    "filtered_out_count": filtered_count,
+                    "final_count": highq_count,
+                }
+            )
+
+    # Write metrics
     if metrics_frames:
         metrics_merged = pd.concat(metrics_frames, ignore_index=True)
         if "species" in metrics_merged.columns:
-            metrics_merged.sort_values(["species", "metric"], inplace=True, ignore_index=True, na_position="last")
+            metrics_merged.sort_values(
+                ["species", "metric"],
+                inplace=True,
+                ignore_index=True,
+                na_position="last",
+            )
         write_df(metrics_merged, "filtered_metrics.csv")
+    else:
+        log("No metrics found to write summary filtered_metrics.csv", level="warning")
 
-    summary_frames: List[pd.DataFrame] = []
-    for species, df in latest_summaries.items():
-        if df is None or df.empty:
-            continue
-        frame = df.copy()
-        if "species" not in frame.columns:
-            frame["species"] = species
-        summary_frames.append(frame)
+    # Write summaries
     if summary_frames:
         summary_merged = pd.concat(summary_frames, ignore_index=True)
         if "species" in summary_merged.columns:
             summary_merged.sort_values(["species"], inplace=True, ignore_index=True)
         write_df(summary_merged, "summary_statistics.csv")
+    else:
+        log("No summaries found to write summary_statistics.csv", level="warning")
 
-    counts_df: Optional[pd.DataFrame] = None
-    if latest_counts:
-        counts_df = pd.DataFrame(list(latest_counts.values()))
-    elif fallback_counts is not None:
-        counts_df = fallback_counts.copy()
-    if counts_df is not None and not counts_df.empty:
+    # Write counts
+    if counts_rows:
+        counts_df = pd.DataFrame(counts_rows)
         if "species" in counts_df.columns:
             counts_df.sort_values(["species"], inplace=True, ignore_index=True)
         write_df(counts_df, "species_counts.csv")
+    else:
+        log("No counts found to write species_counts.csv", level="warning")
 
 
 # ---------------------------------------------------------------------------
 # main entry point
+
 
 def package(
     calculate_dir: str,
     output_path: str,
     *,
     mark_latest: Optional[str] = None,
+    prefer: bool = False,
     version_name: Optional[str] = None,
     dry_run: bool = False,
     overwrite: bool = False,  # kept for API compatibility; not used aggressively
+    force: bool = False,
     verbose: bool = False,
 ) -> int:
     """
@@ -726,17 +882,26 @@ def package(
 
     calculate_dir: QualiBact output directory containing species folders.
     output_path:   Destination base directory; outputs go under output_path/public and output_path/content.
+    prefer:        Mark the packaged schemes as preferred in site_index.json and downstream summaries.
+    force:         Allow overwriting existing static assets/species versions in the destination.
     """
     input_dir = Path(calculate_dir)
     output_base = Path(output_path)
     output_public = output_base / "public"
+    species_static_root = output_public / "static" / "species"
+    genus_static_root = output_public / "static" / "genus"
     content_dir = output_base / "content"
+
+    # honour legacy overwrite flag as force to avoid changing CLI behaviour unexpectedly
+    force = force or overwrite
 
     configure_logging(verbose)
     log(f"Packaging {input_dir} -> {output_public}", verbose)
 
     ensure_dir(output_base, dry_run)
     ensure_dir(output_public, dry_run)
+    ensure_dir(species_static_root, dry_run)
+    ensure_dir(genus_static_root, dry_run)
     ensure_dir(content_dir, dry_run)
 
     preferred_versions = load_yaml(input_dir / "preferred_version.yml")
@@ -761,14 +926,41 @@ def package(
             latest_per_species[species] = preferred_version
         else:
             latest_per_species[species] = sorted(versions)[-1]
+    # If prefer is set, treat incoming versions as preferred for processed species
+    prefer_versions: Dict[str, str] = {}
+    if prefer:
+        for species, _, version in selected:
+            prefer_versions[species] = version
+
+    # Preflight: bail out if target species/version directories already exist unless forced
+    conflicts = []
+    for species, _, version in selected:
+        dest_dir = species_static_root / species / version
+        if dest_dir.exists():
+            conflicts.append((species, version, dest_dir))
+    if conflicts and not force:
+        for species, version, path in conflicts:
+            log(
+                f"Destination already exists for {species} {version}: {path}. "
+                "Re-run with --force to overwrite.",
+                level="warning",
+            )
+        return 1
+
+    # If prefer is set, bump latest_per_species so downstream summaries treat this version as preferred
+    if prefer_versions:
+        for species, version in prefer_versions.items():
+            latest_per_species[species] = version
 
     for species, species_dir, version in selected:
-        dest_dir = output_public / species / version
+        dest_dir = species_static_root / species / version
         ensure_dir(dest_dir, dry_run)
         species_versions.setdefault(species, []).append(version)
         log(f"Processing {species} version {version} from {species_dir}")
 
-        thresholds = load_species_thresholds(species, filtered_metrics, species_dir / "summary.csv")
+        thresholds = load_species_thresholds(
+            species, filtered_metrics, species_dir / "summary.csv"
+        )
 
         metrics_path = species_dir / f"{species}_metrics.csv"
         metrics_df_current: Optional[pd.DataFrame] = None
@@ -813,11 +1005,11 @@ def package(
                 if not filtered_out.empty:
                     filtered_dest = dest_dir / f"{species}_filtered_out_genomes.csv.xz"
                     write_xz_csv(filtered_out, filtered_dest, dry_run)
-                    filtered_path = f"/{species}/{version}/{filtered_dest.name}"
+                    filtered_path = public_path(filtered_dest, output_public)
                 if not high_quality.empty:
                     highq_dest = dest_dir / f"{species}_high_quality_genomes.csv.xz"
                     write_xz_csv(high_quality, highq_dest, dry_run)
-                    highq_path = f"/{species}/{version}/{highq_dest.name}"
+                    highq_path = public_path(highq_dest, output_public)
                 genome_counts["allthebacteria_count"] = len(full_df)
                 computed_counts.append(
                     {
@@ -841,17 +1033,25 @@ def package(
             if version == latest_per_species.get(species):
                 latest_counts.setdefault(
                     species,
-                    {"species": species, "original_count": None, "filtered_out_count": None, "final_count": None},
+                    {
+                        "species": species,
+                        "original_count": None,
+                        "filtered_out_count": None,
+                        "final_count": None,
+                    },
                 )
 
         metrics_csv = species_dir / f"{species}_metrics.csv"
         if not metrics_csv.exists():
             log(f"Missing metrics CSV for {species} at {metrics_csv}", level="warning")
-        elif version == latest_per_species.get(species) and metrics_df_current is not None:
+        elif (
+            version == latest_per_species.get(species)
+            and metrics_df_current is not None
+        ):
             latest_metrics[species] = metrics_df_current
 
         refseq_path, refseq_count, refseq_updated = convert_refseq_json(
-            species_dir, species, dest_dir, dry_run, verbose
+            species_dir, species, dest_dir, output_public, dry_run, verbose
         )
         if refseq_count is not None:
             genome_counts["refseq_count"] = refseq_count
@@ -875,6 +1075,7 @@ def package(
             selected_summary_exists=selected_summary_exists,
             verbose=verbose,
             dry_run=dry_run,
+            output_public=output_public,
         )
         write_species_content(
             species,
@@ -901,7 +1102,9 @@ def package(
                 ensure_dir(target_method.parent, dry_run=False)
                 if overwrite or not target_method.exists():
                     with open(target_method, "w", encoding="utf-8") as handle:
-                        handle.write(f"{version} methods\n\n_Todo: add methods for {version}._\n")
+                        handle.write(
+                            f"{version} methods\n\n_Todo: add methods for {version}._\n"
+                        )
 
     # species_counts: prefer existing aggregated file, else use computed counts
     species_counts_df = None
@@ -913,8 +1116,18 @@ def package(
         log(f"Using computed species counts for {len(computed_counts)} species")
         species_counts_df = pd.DataFrame(computed_counts)
 
-    write_site_index(species_versions, output_public, mark_latest, dry_run, overwrite)
-    write_genus_summaries(latest_metrics, latest_summaries, latest_counts, output_public, dry_run)
+    # Always update site_index with new schemes; prefer versions override existing preferred entries
+    write_site_index(
+        species_versions,
+        output_public,
+        mark_latest,
+        dry_run,
+        overwrite=True,  # always refresh since caller asked to package
+        prefer_versions=prefer_versions,
+    )
+    write_genus_summaries(
+        latest_metrics, latest_summaries, latest_counts, output_public, dry_run
+    )
     write_summary_downloads(
         latest_metrics,
         latest_summaries,

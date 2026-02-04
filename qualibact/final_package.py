@@ -7,16 +7,19 @@ from tqdm import tqdm
 from qualibact.species_util import DEF_METRIC_LIST
 from qualibact.summary_util import plot_summary_plot
 
+
 def get_rejection_reasons(row, metrics_df):
     reasons = []
-    species = row['species_sylph'] if 'species_sylph' in row else row.get('species', None)
+    species = (
+        row["species_sylph"] if "species_sylph" in row else row.get("species", None)
+    )
     if not species:
-        return ['Unknown species']
-    species_metrics = metrics_df[metrics_df['species'] == species.replace(' ', '_')]
+        return ["Unknown species"]
+    species_metrics = metrics_df[metrics_df["species"] == species.replace(" ", "_")]
     for _, metric_row in species_metrics.iterrows():
-        metric = metric_row['metric']
-        lower = metric_row['lower_bounds']
-        upper = metric_row['upper_bounds']
+        metric = metric_row["metric"]
+        lower = metric_row["lower_bounds"]
+        upper = metric_row["upper_bounds"]
         value = row.get(metric)
         if pd.isnull(value):
             continue
@@ -28,54 +31,55 @@ def get_rejection_reasons(row, metrics_df):
             reasons.append(f"{metric} below {lower}")
         if pd.notnull(upper) and value > float(upper):
             reasons.append(f"{metric} above {upper}")
-    return reasons if reasons else ['Unknown/other']
+    return reasons if reasons else ["Unknown/other"]
 
-def main(outdir='output_qualibact'):
+
+def main(outdir="output_qualibact"):
     # 1. Make summary dir
-    output_dir = os.path.join(outdir, 'GENUS_SUMMARY')
+    output_dir = os.path.join(outdir, "GENUS_SUMMARY")
     os.makedirs(output_dir, exist_ok=True)
 
     # 2. Find all genus folders with 2+ species, ignoring GENUS_SUMMARY and all_summary
     genus_to_folders = collections.defaultdict(list)
-    for src in glob.glob('output_qualibact/*/'):
+    for src in glob.glob("output_qualibact/*/"):
         folder = os.path.basename(os.path.normpath(src))
-        if folder in ('GENUS_SUMMARY', 'all_summary'):
+        if folder in ("GENUS_SUMMARY", "all_summary"):
             continue
-        genus = folder.split('_')[0]
+        genus = folder.split("_")[0]
         genus_to_folders[genus].append(folder)
 
     # 3. For each genus with 2+ species, make a summary
     for genus, folders in tqdm(genus_to_folders.items(), desc="Processing genera"):
-        if len(folders) < 2 and genus not in ['Acinetobacter']:
+        if len(folders) < 2 and genus not in ["Acinetobacter"]:
             continue
         genus_dir = os.path.join(output_dir, genus)
         os.makedirs(genus_dir, exist_ok=True)
 
         # Extract genus rows from species_counts.csv and filtered_metrics.csv
         for csv_name, out_name in [
-            ('species_counts.csv', f'{genus}_species_counts.csv'),
-            ('filtered_metrics.csv', f'{genus}_metrics.csv')
+            ("species_counts.csv", f"{genus}_species_counts.csv"),
+            ("filtered_metrics.csv", f"{genus}_metrics.csv"),
         ]:
-            src_csv = f'output_qualibact/all_summary/{csv_name}'
+            src_csv = f"output_qualibact/all_summary/{csv_name}"
             out_csv = os.path.join(genus_dir, out_name)
             if os.path.exists(src_csv):
                 df = pd.read_csv(src_csv)
-                df_genus = df[df.iloc[:,0].astype(str).str.startswith(genus, na=False)]
+                df_genus = df[df.iloc[:, 0].astype(str).str.startswith(genus, na=False)]
                 df_out = pd.concat([df.head(0), df_genus])
                 df_out.to_csv(out_csv, index=False)
 
         # For each species folder in this genus, copy files as before
         for folder in folders:
-            src = os.path.join('output_qualibact', folder)
+            src = os.path.join("output_qualibact", folder)
             dest = os.path.join(genus_dir, folder)
             os.makedirs(dest, exist_ok=True)
             files = [
-                'Genome_Size_refseq_qqplot.png',
-                'Genome_Size_refseq_histogram_kde.png',
+                "Genome_Size_refseq_qqplot.png",
+                "Genome_Size_refseq_histogram_kde.png",
                 f"{folder.replace('_', ' ')}_CDS_vs_Genome_Size.png",
                 f"{folder}_filtered_out_genomes.csv",
                 f"{folder}_high_quality_genomes.csv",
-                'summary.csv',
+                "summary.csv",
                 f"filtered_plots/{folder.replace('_', ' ')}_all_total_length_N50.png",
                 f"filtered_plots/{folder.replace('_', ' ')}_sample_total_length_N50.png",
                 f"filtered_plots/{folder.replace('_', ' ')}_filt_total_length_N50.png",
@@ -90,44 +94,52 @@ def main(outdir='output_qualibact'):
             if os.path.isfile(filtered_csv) and os.path.isfile(metrics_csv):
                 metrics_df = pd.read_csv(metrics_csv)
                 df = pd.read_csv(filtered_csv)
-                df['rejection_reason'] = df.apply(lambda row: "; ".join(get_rejection_reasons(row, metrics_df)), axis=1)
+                df["rejection_reason"] = df.apply(
+                    lambda row: "; ".join(get_rejection_reasons(row, metrics_df)),
+                    axis=1,
+                )
                 df.to_csv(filtered_csv, index=False)
         # Add a README.txt to each genus folder explaining the contents
         make_readme(genus, genus_dir)
         # make some of the box and whisker plots for the genus
         # make box plots of each metric
-        plot_dir = os.path.join(genus_dir, 'plots')
+        plot_dir = os.path.join(genus_dir, "plots")
         os.makedirs(plot_dir, exist_ok=True)
         # the all_summary_df is a merge of all the summary.csv files for each species in the genus
         # Merge all summary.csv files for each species in the genus into all_summary_df
         summary_dfs = []
         for folder in folders:
-            summary_path = os.path.join(genus_dir, folder, 'summary.csv')
+            summary_path = os.path.join(genus_dir, folder, "summary.csv")
             if os.path.isfile(summary_path):
                 df = pd.read_csv(summary_path)
-                df['species'] = folder  # Add species info
+                df["species"] = folder  # Add species info
                 # make species the first column
-                cols = ['species'] + [col for col in df.columns if col != 'species']
+                cols = ["species"] + [col for col in df.columns if col != "species"]
                 df = df[cols]
                 summary_dfs.append(df)
         if summary_dfs:
             all_summary_df = pd.concat(summary_dfs, ignore_index=True)
-            all_summary_path = os.path.join(genus_dir, f'{genus}_all_summary.csv')
+            all_summary_path = os.path.join(genus_dir, f"{genus}_all_summary.csv")
             all_summary_df.to_csv(all_summary_path, index=False)
-            # create a simpler file, with just the count and refseq count 
-            final_df = all_summary_df[['species', 'count', 'metric', 'refseq_count']]
+            # create a simpler file, with just the count and refseq count
+            final_df = all_summary_df[["species", "count", "metric", "refseq_count"]]
             final_df = final_df.drop_duplicates()
-            final_df_path = os.path.join(genus_dir, f'{genus}_refseq_sra_count_summary.csv')
+            final_df_path = os.path.join(
+                genus_dir, f"{genus}_refseq_sra_count_summary.csv"
+            )
             final_df.to_csv(final_df_path, index=False)
-            for metric in tqdm(DEF_METRIC_LIST + ['Genome_Size', 'Total_Coding_Sequences'], desc="Plotting metrics"):
-                plot_summary_plot(metric, all_summary_df, plot_dir)        
+            for metric in tqdm(
+                DEF_METRIC_LIST + ["Genome_Size", "Total_Coding_Sequences"],
+                desc="Plotting metrics",
+            ):
+                plot_summary_plot(metric, all_summary_df, plot_dir)
 
 
 def make_readme(genus, genus_dir):
     """
     Create a README.md file in the genus summary directory with explanations of the summary, metrics, and species count files.
     """
-    readme_path = os.path.join(genus_dir, 'README.md')
+    readme_path = os.path.join(genus_dir, "README.md")
     content = f"""# {genus} Summary
 
 This directory contains a summary of genome QC and filtering results for the genus **{genus}**.
@@ -179,9 +191,8 @@ This file contains the quality control thresholds and statistical summaries used
 - If you trust me, just apply the thresholds in {genus}_metrics.csv to your own data.
 
 """
-    with open(readme_path, 'w', encoding='utf-8') as f:
+    with open(readme_path, "w", encoding="utf-8") as f:
         f.write(content)
-        
 
 
 if __name__ == "__main__":

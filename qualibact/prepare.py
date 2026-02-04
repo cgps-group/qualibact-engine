@@ -1,14 +1,13 @@
 # This method will prepare the dataframes required for the qualibact module
 import os
 import logging
-import pandas as pd
-from qualibact.prepare_util import create_full_df, filter_assembly_data, get_df
-from qualibact.refseq import run_datasets_summary    
+from qualibact.prepare_util import get_df
+from qualibact.refseq import run_datasets_summary
 from tqdm import tqdm
 
 
 def prepare_qualibact_dataframes(workdir, metadata_path, submit=False):
-    # Merge the metadata dataframes from atb. 
+    # Merge the metadata dataframes from atb.
     # Filter the inccorect species records.
     # Creat the final filtered dataframe
     # Retrieve refseq statistics
@@ -34,7 +33,8 @@ def prepare_qualibact_dataframes(workdir, metadata_path, submit=False):
         ].copy()
         # Write the species dataframe to a parquet file
         species_df.to_parquet(
-            os.path.join(species_dir, f"{safe_species}_assembly_stats.parquet"), index=False
+            os.path.join(species_dir, f"{safe_species}_assembly_stats.parquet"),
+            index=False,
         )
         # get the refseq statistics
         run_datasets_summary(
@@ -44,14 +44,16 @@ def prepare_qualibact_dataframes(workdir, metadata_path, submit=False):
             assembly_level="complete",
         )
         # Make a batch script to run qualibact for this species (SLURM job)
-        batch_script_path = os.path.join(species_dir, f"run_qualibact_{safe_species}.sh")
+        batch_script_path = os.path.join(
+            species_dir, f"run_qualibact_{safe_species}.sh"
+        )
         python_path = os.path.abspath(os.environ.get("QUALIBACT_PYTHONPATH", "python3"))
 
         with open(batch_script_path, "w") as f:
             parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             script_path = os.path.join(parent_dir, "qualibact-run.py")
             abs_species_dir = os.path.abspath(species_dir)
-            # qualibact-run.py calculate "Escherichia coli" output_qualibact/Escherichia_coli/ 
+            # qualibact-run.py calculate "Escherichia coli" output_qualibact/Escherichia_coli/
             f.write(f"""#!/bin/bash
 #SBATCH --job-name=qualibact{safe_species}
 #SBATCH --output={abs_species_dir}/qualibact_{safe_species}.out
@@ -64,4 +66,3 @@ def prepare_qualibact_dataframes(workdir, metadata_path, submit=False):
         os.chmod(batch_script_path, 0o755)
         if submit:
             os.system(f"sbatch {batch_script_path}")
-    
