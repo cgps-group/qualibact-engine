@@ -2,6 +2,47 @@
 
 We welcome contributions to QualiBact! Major contributions to source code, manuscript development, metric validation and adoption, and providing additional data for calibrating quality thresholds will be granted authorship on publications. Pull requests are welcome through GitHub.
 
+## Development setup
+
+```bash
+git clone https://github.com/happykhan/qualibact-engine.git
+cd qualibact-engine
+pixi install
+```
+
+Run the test suite:
+
+```bash
+pixi run python3 -m pytest tests/ -v
+```
+
+`pixi.lock` is committed to the repository. If you add or update dependencies, run `pixi install` to regenerate it and commit the result.
+
+### Project structure
+
+```
+qualibact/          Core Python package
+  assess.py         Per-genome QC assessment (report command)
+  prepare.py        Data preparation (generic CSV and ATB modes)
+  prepare_util.py   Column normalisation, CSV loading utilities
+  species_run.py    Per-species threshold calculation
+  species_util.py   Outlier filtering, metric statistics
+  summary.py        Cross-species aggregation
+  docs.py           [Internal] Website MDX generation
+  pack.py           [Internal] qualibact.org packaging
+scripts/            Backwards-compatible entry points
+  genome_qc_assess.py  Shim → qualibact/assess.py
+tests/              Unit and regression tests
+  fixtures/         Small synthetic datasets for testing
+qualibact-run.py    CLI entry point (typer)
+```
+
+### Adding tests
+
+Tests live in `tests/`. Use `tests/fixtures/sample_assemblies.csv` as a starting point for synthetic data. Regression tests should pin expected numeric outputs and include a comment explaining what would justify updating them.
+
+
+
 ## We Need More Data!
 
 Currently, the QC thresholds are based on [AllTheBacteria](https://github.com/AllTheBacteria/AllTheBacteria) data, which used Shovill as the genome assembly software. We are aware that the choice of assembler will affect certain metrics (such as N50 and number of contigs).
