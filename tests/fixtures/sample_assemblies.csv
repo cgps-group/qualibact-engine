@@ -1,0 +1,11 @@
+sample_id,species,N50,Genome_Size,GC_Content,num_contigs,Completeness_Specific,Contamination,Total_Coding_Sequences
+SAMPLE001,Escherichia coli,85000,5100000,0.508,42,99.1,0.2,4980
+SAMPLE002,Escherichia coli,92000,5050000,0.507,38,98.5,0.1,4850
+SAMPLE003,Escherichia coli,12000,4200000,0.505,180,72.0,0.5,3900
+SAMPLE004,Escherichia coli,78000,5080000,0.510,50,99.0,0.3,4920
+SAMPLE005,Klebsiella pneumoniae,95000,5700000,0.571,35,99.2,0.1,5300
+SAMPLE006,Klebsiella pneumoniae,88000,5650000,0.570,40,98.8,0.2,5250
+SAMPLE007,Klebsiella pneumoniae,5000,5500000,0.569,320,55.0,1.2,4800
+SAMPLE008,Staphylococcus aureus,65000,2800000,0.329,60,99.0,0.1,2650
+SAMPLE009,Staphylococcus aureus,70000,2850000,0.330,55,98.7,0.2,2700
+SAMPLE010,Staphylococcus aureus,60000,2790000,0.328,65,97.5,0.3,2600

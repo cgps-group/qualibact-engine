@@ -4,6 +4,61 @@ import pandas as pd
 import os
 import logging
 
+# Canonical internal column names and their common aliases in user-provided CSVs
+_COLUMN_ALIASES = {
+    "species_sylph": ["species", "species_name", "organism", "taxon"],
+    "sample": ["sample_id", "id", "accession", "assembly"],
+    "N50": ["n50", "contig_n50", "Contig_N50"],
+    "Genome_Size": ["genome_size", "total_length", "assembly_size", "total_assembly_length"],
+    "GC_Content": ["gc_content", "gc", "gc_percent", "GC"],
+    "number": ["num_contigs", "contig_count", "number_of_contigs"],
+    "Completeness_Specific": ["completeness", "completeness_specific", "checkm_completeness"],
+    "Contamination": ["contamination", "checkm_contamination"],
+    "Total_Coding_Sequences": ["total_coding_sequences", "num_cds", "cds_count", "gene_count"],
+}
+
+
+def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Rename user-supplied column names to internal canonical names."""
+    rename_map = {}
+    lower_cols = {c.lower(): c for c in df.columns}
+    for canonical, aliases in _COLUMN_ALIASES.items():
+        if canonical in df.columns:
+            continue
+        for alias in aliases:
+            match = lower_cols.get(alias.lower())
+            if match and match not in rename_map.values():
+                rename_map[match] = canonical
+                break
+    if rename_map:
+        logging.info("Renaming columns: %s", rename_map)
+        df = df.rename(columns=rename_map)
+    return df
+
+
+def load_generic_csv(input_path: str) -> pd.DataFrame:
+    """
+    Load a user-provided assembly stats CSV or TSV and normalise column names
+    to the internal format used by qualibact-engine.
+
+    Required columns (after normalisation): species_sylph, sample
+    Recognised metric columns: N50, Genome_Size, GC_Content, number,
+    Completeness_Specific, Contamination, Total_Coding_Sequences
+    """
+    sep = "\t" if input_path.endswith((".tsv", ".tsv.gz")) else ","
+    if input_path.endswith(".gz"):
+        df = pd.read_csv(input_path, sep=sep, compression="gzip")
+    else:
+        df = pd.read_csv(input_path, sep=sep)
+    df = normalize_columns(df)
+    missing = [c for c in ("species_sylph", "sample") if c not in df.columns]
+    if missing:
+        raise ValueError(
+            f"Input file is missing required columns (after alias resolution): {missing}. "
+            "Expected at least 'sample' (or sample_id/accession) and 'species' (or species_name/taxon)."
+        )
+    return df
+
 
 # Function to extract genus and species
 def rename_species(name):

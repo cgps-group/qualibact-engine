@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "qualibact-engine"
+version = "1.1.0"
+description = "Species-specific quality control thresholds for bacterial genome assemblies"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+dependencies = [
+    "typer>=0.9",
+    "pandas>=1.5",
+    "numpy>=1.23",
+    "matplotlib>=3.6",
+    "seaborn>=0.12",
+    "scipy>=1.10",
+    "scikit-learn>=1.2",
+    "statsmodels>=0.13",
+    "tqdm>=4.60",
+    "rich>=13.0",
+    "pyyaml>=6.0",
+    "pyarrow>=11.0",
+    "python-dotenv>=1.0",
+]
+
+[project.scripts]
+qualibact = "qualibact._cli:app"
+
+[tool.setuptools.packages.find]
+include = ["qualibact*"]

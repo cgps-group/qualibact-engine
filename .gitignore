@@ -1,5 +1,13 @@
-output_qualibact
+# Output and working directories
+output_qualibact/
 test_output/
+output_*/
+work/
+
+# QualiBact env and data files
+.qualibact.env
+*.parquet
+*.tsv.gz
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

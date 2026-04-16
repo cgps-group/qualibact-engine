@@ -493,8 +493,58 @@ def parse_args():
     return parser.parse_args()
 
 
+def run_assessment(args):
+    """Run the QC assessment with a pre-built args namespace. Callable from qualibact-run.py."""
+    if args.batch:
+        root = Path(args.input_dir)
+        summaries = []
+        for species_dir in _find_species_dirs(root):
+            genomes_path, df = _load_genomes_csv(species_dir, None)
+            summary_path, summary_df = _load_summary_csv(species_dir, None)
+            df = _normalize_columns(df)
+            fallback_species = species_dir.name.replace("_", " ")
+            species = _resolve_species_name(df, summary_df, fallback_species)
+            plots_dir = species_dir / DEFAULT_PLOTS_DIRNAME
+            plots_dir.mkdir(parents=True, exist_ok=True)
+            qc_df, metric_info, summary = assess_species(df, species, plots_dir)
+            (species_dir / "qc_genome_results.csv").write_text(qc_df.to_csv(index=False))
+            (species_dir / "qc_metric_summary.csv").write_text(metric_info.to_csv(index=False))
+            summaries.append({"species": species, **summary})
+        summary_df = pd.DataFrame(summaries)
+        if not summary_df.empty:
+            summary_out = root / "qc_species_summary.csv"
+            summary_df.to_csv(summary_out, index=False)
+            _plot_species_scatter(summary_df, root / "qc_species_separation_scatter.png")
+        print(f"Batch processed: {len(summaries)} species")
+        return
+
+    genomes_path, df = _load_genomes_csv(args.input_dir, args.genomes_csv)
+    summary_path, summary_df = _load_summary_csv(args.input_dir, args.summary_csv)
+    df = _normalize_columns(df)
+    fallback_species = Path(args.input_dir).name.replace("_", " ")
+    species = _resolve_species_name(df, summary_df, fallback_species)
+    plots_dir = Path(args.plots_dir) if args.plots_dir else Path(args.input_dir) / DEFAULT_PLOTS_DIRNAME
+    plots_dir.mkdir(parents=True, exist_ok=True)
+    qc_df, metric_info, summary = assess_species(df, species, plots_dir)
+    qc_output = Path(args.qc_output) if args.qc_output else Path(args.input_dir) / "qc_genome_results.csv"
+    metric_output = Path(args.metric_output) if args.metric_output else Path(args.input_dir) / "qc_metric_summary.csv"
+    qc_df.to_csv(qc_output, index=False)
+    metric_info.to_csv(metric_output, index=False)
+    print(f"QC results: {qc_output}")
+    print(f"Metric summary: {metric_output}")
+    print(f"Plots: {plots_dir}")
+    print(f"\n  n: {summary['n']}")
+    print(f"  gc_variation_flag: {summary['gc_variation_flag']}")
+    print(f"  bad_completeness: {summary['bad_completeness_count']}")
+    print(f"  bad_contamination: {summary['bad_contamination_count']}")
+    print(f"  bad_gc_gmm: {summary['bad_gc_gmm_count']}")
+    print(f"  bad_pair_genome_size_cds: {summary['bad_pair_genome_size_cds_count']}")
+    print(f"  bad_pair_length_n50: {summary['bad_pair_length_n50_count']}")
+
+
 if __name__ == "__main__":
     args = parse_args()
+    run_assessment(args)
 
     if args.batch:
         root = Path(args.input_dir)

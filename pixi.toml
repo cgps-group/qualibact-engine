@@ -1,0 +1,28 @@
+[workspace]
+name = "qualibact-engine"
+version = "1.1.0"
+description = "Species-specific quality control thresholds for bacterial genome assemblies"
+channels = ["conda-forge", "bioconda"]
+platforms = ["linux-64", "osx-arm64", "osx-64"]
+
+[tasks]
+qualibact = "python qualibact-run.py"
+
+[dependencies]
+python = ">=3.9"
+pandas = ">=1.5"
+numpy = ">=1.23"
+matplotlib = ">=3.6"
+seaborn = ">=0.12"
+scipy = ">=1.10"
+scikit-learn = ">=1.2"
+statsmodels = ">=0.13"
+tqdm = ">=4.60"
+rich = ">=13.0"
+pyyaml = ">=6.0"
+pyarrow = ">=11.0"
+
+[pypi-dependencies]
+typer = ">=0.9"
+python-dotenv = ">=1.0"
+pytest = ">=7.0"
