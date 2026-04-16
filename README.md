@@ -17,6 +17,8 @@ Or with pip:
 pip install -e .
 ```
 
+`pixi.lock` is committed to the repository to ensure reproducible environments. If you add or update dependencies, run `pixi install` to regenerate it and commit the result.
+
 ## Quick start
 
 ### Generate a QC report from your own assembly stats

@@ -92,7 +92,7 @@ def report(
     Use --batch to process all species subdirectories at once.
     """
     import argparse
-    from scripts.genome_qc_assess import run_assessment
+    from qualibact.assess import run_assessment
 
     ns = argparse.Namespace(
         input_dir=input_dir,
