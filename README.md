@@ -1,3 +1,7 @@
+> **Development has moved to GitLab:** [https://gitlab.com/cgps/tools/qualibact-engine](https://gitlab.com/cgps/tools/qualibact-engine)
+>
+> Please use GitLab for current code, issues and merge requests. This GitHub copy is retained to preserve existing links and history.
+
 # qualibact-engine
 
 Species-specific quality control thresholds for bacterial genome assemblies.
